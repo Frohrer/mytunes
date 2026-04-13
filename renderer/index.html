@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' mytunes-audio:">
+  <title>MyTunes</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Draggable title bar area -->
+  <div class="titlebar">
+    <div class="titlebar-text">MyTunes</div>
+  </div>
+
+  <!-- Device status bar -->
+  <div class="device-bar" id="deviceBar">
+    <div class="device-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="device-name" id="deviceName">Searching for devices...</span>
+      <span class="device-warning hidden" id="deviceWarning">Screen will flash black to reload ringtones</span>
+    </div>
+    <button class="btn-refresh" id="refreshBtn" title="Refresh devices">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M13.65 2.35A7.96 7.96 0 008 0C3.58 0 .01 3.58.01 8S3.58 16 8 16c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 018 14 6 6 0 012 8a6 6 0 016-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="upload" id="tabUpload">Upload</button>
+    <button class="tab" data-tab="device" id="tabDevice">On Device</button>
+  </div>
+
+  <!-- Upload view -->
+  <div class="content" id="uploadView">
+    <!-- Drop zone -->
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+      <div class="dropzone-text">Drop audio files here</div>
+      <div class="dropzone-subtext">m4r, mp3, wav, aac, flac, mp4 &mdash; auto-converts to ringtone</div>
+    </div>
+
+    <!-- File list -->
+    <div class="file-list" id="fileList"></div>
+
+    <!-- Help tip shown when no device -->
+    <div class="help-tip" id="helpTip">
+      <strong>iPhone not detected?</strong>
+      <ol>
+        <li>Unlock your iPhone screen</li>
+        <li>Unplug and replug the USB cable</li>
+        <li>Tap "Trust This Computer" on your iPhone</li>
+        <li>Enter your passcode to confirm</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- Device ringtones view -->
+  <div class="device-ringtones-header hidden" id="deviceHeader">
+    <span class="ringtone-count" id="ringtoneCount">Loading...</span>
+    <div class="action-buttons">
+      <button class="btn btn-save" id="saveSelectedBtn" disabled>Save to Mac</button>
+      <button class="btn btn-delete" id="deleteSelectedBtn" disabled>Delete</button>
+    </div>
+  </div>
+  <div class="content hidden" id="deviceView">
+    <div class="file-list" id="deviceFileList"></div>
+    <div class="device-empty hidden" id="deviceEmpty">
+      <div class="device-empty-text">No custom ringtones on device</div>
+    </div>
+    <div class="device-loading" id="deviceLoading">
+      <div class="device-loading-text">Loading ringtones...</div>
+    </div>
+  </div>
+
+  <!-- Action bar (upload view) -->
+  <div class="action-bar" id="actionBar" style="display: none;">
+    <span class="file-count" id="fileCount">0 files</span>
+    <div class="action-buttons">
+      <button class="btn btn-clear" id="clearBtn">Clear</button>
+      <button class="btn btn-transfer" id="transferBtn" disabled>Transfer</button>
+    </div>
+  </div>
+
+  <!-- Now playing bar -->
+  <div class="now-playing hidden" id="nowPlaying">
+    <button class="np-play-btn" id="npPlayBtn" title="Play/Pause">
+      <svg class="np-icon-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+      </svg>
+      <svg class="np-icon-play hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5,3 19,12 5,21"/>
+      </svg>
+    </button>
+    <div class="np-info">
+      <div class="np-title" id="npTitle">-</div>
+      <div class="np-time" id="npTime">0:00 / 0:00</div>
+    </div>
+    <div class="np-progress-wrap" id="npProgressWrap">
+      <div class="np-progress" id="npProgress"></div>
+    </div>
+    <button class="np-close" id="npClose" title="Stop">&times;</button>
+  </div>
+
+  <!-- Disconnected overlay -->
+  <div class="disconnect-overlay hidden" id="disconnectOverlay">
+    <div class="disconnect-message">
+      <div class="disconnect-spinner"></div>
+      <div class="disconnect-text">Reconnecting to iPhone...</div>
+      <div class="disconnect-subtext" id="disconnectSubtext">Waiting for device after screen reload</div>
+    </div>
+  </div>
+
+  <audio id="audioPlayer"></audio>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
