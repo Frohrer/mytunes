@@ -62,38 +62,9 @@ class DeviceManager {
     stream.end();
   }
 
-  async _reloadToneLibrary(deviceId, udid) {
-    // Sleep command briefly puts the screen to sleep, which triggers iOS to reload the tone library
-    try {
-      const tls = require('tls');
-      const session = await startLockdownSession(this.client, deviceId, udid);
-      const svcInfo = await startService(session, 'com.apple.mobile.diagnostics_relay');
-      const pr = session.pairingRecord;
-      session.stream.end();
-
-      const tunnel = await this.client.createDeviceTunnel(deviceId, svcInfo.port);
-      let stream = tunnel;
-      if (svcInfo.enableSSL) {
-        const cert = Buffer.isBuffer(pr.HostCertificate) ? pr.HostCertificate : Buffer.from(pr.HostCertificate, 'base64');
-        const key = Buffer.isBuffer(pr.HostPrivateKey) ? pr.HostPrivateKey : Buffer.from(pr.HostPrivateKey, 'base64');
-        stream = await new Promise((resolve, reject) => {
-          const s = tls.connect({ socket: tunnel, cert, key, rejectUnauthorized: false }, () => resolve(s));
-          s.once('error', reject);
-        });
-      }
-
-      const msg = plist.build({ Request: 'Sleep' });
-      const buf = Buffer.from(msg, 'utf8');
-      const header = Buffer.alloc(4);
-      header.writeUInt32BE(buf.length, 0);
-      stream.write(Buffer.concat([header, buf]));
-
-      await new Promise(r => setTimeout(r, 500));
-      stream.end();
-    } catch {
-      // Non-critical - ringtone will appear after manual lock/unlock
-    }
-  }
+  // No-op — iOS requires a full reboot to pick up new ringtones.
+  // The UI offers a "Restart iPhone" button after transfers.
+  async _reloadToneLibrary() {}
 
   async listDevices() {
     const devices = await this.client.getDevices();

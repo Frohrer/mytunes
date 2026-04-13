@@ -44,6 +44,8 @@ const npProgressWrap = document.getElementById('npProgressWrap');
 const npClose = document.getElementById('npClose');
 const audioPlayer = document.getElementById('audioPlayer');
 const disconnectOverlay = document.getElementById('disconnectOverlay');
+const restartBar = document.getElementById('restartBar');
+const restartBtn = document.getElementById('restartBtn');
 
 // ===== Tabs =====
 
@@ -270,6 +272,7 @@ async function startTransfer() {
   startPolling();
   updateDeviceTabCount();
 
+  if (queuedFiles.some(f => f.status === 'done')) restartBar.classList.remove('hidden');
 }
 
 // ===== Device View =====
@@ -679,6 +682,22 @@ clearBtn.addEventListener('click', clearFiles);
 transferBtn.addEventListener('click', startTransfer);
 deleteSelectedBtn.addEventListener('click', deleteSelected);
 saveSelectedBtn.addEventListener('click', saveSelected);
+restartBtn.addEventListener('click', async () => {
+  if (!currentDevice) return;
+  restartBtn.textContent = 'Restarting...';
+  restartBtn.disabled = true;
+  try {
+    await window.mytunes.restartDevice(currentDevice.id, currentDevice.udid);
+    restartBar.classList.add('hidden');
+    currentDevice = null;
+    statusDot.className = 'status-dot';
+    deviceName.textContent = 'iPhone is restarting...';
+  } catch (e) {
+    showError(e.message);
+    restartBtn.textContent = 'Restart iPhone';
+    restartBtn.disabled = false;
+  }
+});
 
 // Initialize
 startPolling();

@@ -32,8 +32,8 @@ Grab the latest release from the [Releases page](https://github.com/Frohrer/mytu
 3. Drop audio files onto the app (or click to browse)
 4. Edit the ringtone name if you want
 5. Click **Transfer**
-6. Your screen will briefly flash black as the ringtone library reloads
-7. Go to **Settings > Sounds & Haptics > Ringtone** on your iPhone
+6. Click **Restart iPhone** when prompted — iOS requires a reboot to load new ringtones
+7. After restart, go to **Settings > Sounds & Haptics > Ringtone** on your iPhone
 
 ### Managing existing ringtones
 
@@ -51,7 +51,7 @@ MyTunes communicates directly with your iPhone over USB using the same protocols
 2. **lockdown** — authenticates using the pairing record from "Trust This Computer"
 3. **AFC** (Apple File Conduit) — reads/writes files on the device
 4. **Ringtones.plist** — registers ringtones with proper GUID, name, and duration
-5. **Diagnostics relay** — triggers a sleep/wake cycle to reload the tone library
+5. **Diagnostics relay** — restarts the device to load new ringtones
 
 ## Building from source
 

@@ -18,7 +18,7 @@
     <div class="device-status">
       <span class="status-dot" id="statusDot"></span>
       <span class="device-name" id="deviceName">Searching for devices...</span>
-      <span class="device-warning hidden" id="deviceWarning">Screen will flash black to reload ringtones</span>
+      <span class="device-warning hidden" id="deviceWarning">Restart required after changes</span>
     </div>
     <button class="btn-refresh" id="refreshBtn" title="Refresh devices">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -79,6 +79,12 @@
     <div class="device-loading" id="deviceLoading">
       <div class="device-loading-text">Loading ringtones...</div>
     </div>
+  </div>
+
+  <!-- Restart prompt -->
+  <div class="restart-bar hidden" id="restartBar">
+    <span class="restart-text">Restart iPhone for new ringtones to appear</span>
+    <button class="btn btn-restart" id="restartBtn">Restart iPhone</button>
   </div>
 
   <!-- Action bar (upload view) -->
