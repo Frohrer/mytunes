@@ -24,7 +24,6 @@ Grab the latest release from the [Releases page](https://github.com/Frohrer/mytu
 
 - iPhone connected via USB data cable
 - "Trust This Computer" accepted on the iPhone (one-time)
-- Python 3 with `mutagen` installed (`pip install mutagen`) — used for embedding ringtone metadata
 
 ## Usage
 
@@ -57,11 +56,7 @@ MyTunes communicates directly with your iPhone over USB using the same protocols
 ## Building from source
 
 ```bash
-# Install dependencies
 npm install
-pip install mutagen
-
-# Run in development
 npm start
 
 # Build for your platform

@@ -2,6 +2,7 @@ const { execFile, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { addRingtoneMetadata } = require('./mp4meta');
 
 const SUPPORTED_EXTENSIONS = [
   '.m4r', '.mp3', '.mp4', '.m4a', '.wav', '.aiff', '.aif',
@@ -25,28 +26,12 @@ function isM4R(filePath) {
   return path.extname(filePath).toLowerCase() === '.m4r';
 }
 
-// Add required iTunes metadata atoms so iOS recognizes the ringtone
-function addRingtoneMetadata(m4rPath, title) {
+// Wrapper that catches errors - metadata is critical for iOS recognition
+function embedMetadata(m4rPath, title) {
   try {
-    const scriptPath = path.join(TEMP_DIR, '_add_meta.py');
-    fs.writeFileSync(scriptPath, `
-import sys
-from mutagen.mp4 import MP4
-f = MP4(sys.argv[1])
-if f.tags is None:
-    f.add_tags()
-f.tags['\\xa9nam'] = [sys.argv[2]]
-f.tags['\\xa9too'] = ['MyTunes 1.0']
-f.tags['cpil'] = False
-f.tags['pgap'] = False
-f.tags['tmpo'] = [0]
-f.save()
-`);
-    execSync(`python3 "${scriptPath}" "${m4rPath}" "${title.replace(/"/g, '\\"')}"`, {
-      timeout: 10000
-    });
-  } catch {
-    // Non-fatal - file may still work without metadata on some iOS versions
+    addRingtoneMetadata(m4rPath, title);
+  } catch (e) {
+    console.error('Warning: failed to embed metadata:', e.message);
   }
 }
 
@@ -62,7 +47,7 @@ function convertToM4R(inputPath, title) {
       // Even for existing m4r files, ensure they have proper metadata
       const tmpCopy = path.join(TEMP_DIR, `${baseName}_copy.m4r`);
       fs.copyFileSync(inputPath, tmpCopy);
-      addRingtoneMetadata(tmpCopy, displayName);
+      embedMetadata(tmpCopy, displayName);
       // Also check sample rate and re-encode if not 44100
       try {
         const info = execSync(`afinfo "${tmpCopy}" 2>&1`, { encoding: 'utf8' });
@@ -73,7 +58,7 @@ function convertToM4R(inputPath, title) {
           execSync(`afconvert "${wavPath}" "${outputPath}" -d aac -f m4af -s 3`, { timeout: 60000 });
           try { fs.unlinkSync(wavPath); } catch {}
           try { fs.unlinkSync(tmpCopy); } catch {}
-          addRingtoneMetadata(outputPath, displayName);
+          embedMetadata(outputPath, displayName);
           resolve(outputPath);
           return;
         }
@@ -104,13 +89,13 @@ function convertToM4R(inputPath, title) {
         ], { timeout: 60000 }, (err2) => {
           if (err2) {
             tryFfmpeg(inputPath, outputPath).then(() => {
-              addRingtoneMetadata(outputPath, displayName);
+              embedMetadata(outputPath, displayName);
               resolve(outputPath);
             }).catch(() =>
               reject(new Error(`Failed to convert ${path.basename(inputPath)}: ${err2.message}`))
             );
           } else {
-            addRingtoneMetadata(outputPath, displayName);
+            embedMetadata(outputPath, displayName);
             resolve(outputPath);
           }
         });
@@ -129,13 +114,13 @@ function convertToM4R(inputPath, title) {
 
         if (err2) {
           tryFfmpeg(inputPath, outputPath).then(() => {
-            addRingtoneMetadata(outputPath, displayName);
+            embedMetadata(outputPath, displayName);
             resolve(outputPath);
           }).catch(() =>
             reject(new Error(`Failed to convert ${path.basename(inputPath)}: ${err2.message}`))
           );
         } else {
-          addRingtoneMetadata(outputPath, displayName);
+          embedMetadata(outputPath, displayName);
           resolve(outputPath);
         }
       });
