@@ -127,7 +127,9 @@ function addRingtoneMetadata(filePath, title) {
 
   // Build new metadata atoms
   const namAtom = buildTextAtom('\xA9nam', title || 'Ringtone');
-  const tooAtom = buildTextAtom('\xA9too', 'Tonedrop 1.0');
+  // The encoder tag is stamped into every file we write, so take the version
+  // from package.json rather than a literal that silently goes stale on release.
+  const tooAtom = buildTextAtom('\xA9too', `Tonedrop ${require('../package.json').version}`);
   const cpilAtom = buildBoolAtom('cpil', false);
   const pgapAtom = buildBoolAtom('pgap', false);
   const tmpoAtom = buildUInt16Atom('tmpo', 0);

@@ -19,6 +19,17 @@ Grab the latest release from the [Releases page](https://github.com/Frohrer/tone
 
 - **macOS**: Download the `.dmg` file
 
+> **The app is unsigned.** Releases are not signed with an Apple Developer ID,
+> so macOS will refuse to open it on a double-click ("Apple could not verify
+> Tonedrop is free of malware"). To run it anyway: drag the app to
+> `/Applications`, then **right-click it → Open → Open**, which prompts once and
+> remembers the choice. From a terminal, `xattr -dr com.apple.quarantine
+> /Applications/Tonedrop.app` does the same thing.
+>
+> This is Gatekeeper telling you the truth — the build genuinely isn't signed by
+> anyone. If you'd rather not take that on faith, build it yourself from source
+> with `npm run dist:mac`; it's the same output.
+
 > **Platform support.** Released builds target macOS. The device transport
 > already speaks usbmux on both platforms (`/var/run/usbmuxd` on macOS, TCP
 > 27015 on Windows, which Apple Mobile Device Support provides). The remaining
@@ -88,9 +99,9 @@ secrets:
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 
-When these are present the workflow signs and notarizes automatically. Without
-them it still produces an **unsigned** build (for local testing only) — such
-builds are blocked by Gatekeeper and should not be distributed.
+When these are present the workflow signs and notarizes automatically. They are
+not currently configured, so published builds are unsigned — see the note in
+[Download](#download).
 
 ## License
 
