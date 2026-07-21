@@ -1,31 +1,28 @@
 {
-  "name": "mytunes",
+  "name": "tonedrop",
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node --test",
+    "icon": "node build/generate-icon.js && bash build/make-icns.sh",
     "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dist:mac": "electron-builder --mac"
   },
   "build": {
-    "appId": "com.mytunes.app",
-    "productName": "MyTunes",
+    "appId": "com.tonedrop.app",
+    "productName": "Tonedrop",
     "mac": {
       "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "target": [
         "dmg",
         "zip"
       ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": true,
-      "allowToChangeInstallationDirectory": false
     },
     "files": [
       "main.js",

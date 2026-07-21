@@ -1,4 +1,4 @@
-const { execFile, execSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -9,7 +9,7 @@ const SUPPORTED_EXTENSIONS = [
   '.flac', '.ogg', '.wma', '.aac', '.caf', '.mov', '.m4v'
 ];
 
-const TEMP_DIR = path.join(os.tmpdir(), 'mytunes-conversions');
+const TEMP_DIR = path.join(os.tmpdir(), 'tonedrop-conversions');
 
 function ensureTempDir() {
   if (!fs.existsSync(TEMP_DIR)) {
@@ -50,12 +50,14 @@ function convertToM4R(inputPath, title) {
       embedMetadata(tmpCopy, displayName);
       // Also check sample rate and re-encode if not 44100
       try {
-        const info = execSync(`afinfo "${tmpCopy}" 2>&1`, { encoding: 'utf8' });
+        // execFile* (no shell) — file paths derive from user-supplied names,
+        // so they must never be interpolated into a shell command string.
+        const info = execFileSync('afinfo', [tmpCopy], { encoding: 'utf8' });
         if (!info.includes('44100 Hz')) {
           // Re-encode to 44100 Hz
           const wavPath = path.join(TEMP_DIR, `${baseName}_resample.wav`);
-          execSync(`afconvert "${tmpCopy}" "${wavPath}" -d LEI16@44100 -f WAVE -c 2`, { timeout: 60000 });
-          execSync(`afconvert "${wavPath}" "${outputPath}" -d aac -f m4af -s 3`, { timeout: 60000 });
+          execFileSync('afconvert', [tmpCopy, wavPath, '-d', 'LEI16@44100', '-f', 'WAVE', '-c', '2'], { timeout: 60000 });
+          execFileSync('afconvert', [wavPath, outputPath, '-d', 'aac', '-f', 'm4af', '-s', '3'], { timeout: 60000 });
           try { fs.unlinkSync(wavPath); } catch {}
           try { fs.unlinkSync(tmpCopy); } catch {}
           embedMetadata(outputPath, displayName);

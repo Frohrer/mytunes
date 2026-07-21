@@ -1,8 +1,14 @@
 const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { DeviceManager } = require('./src/device');
+const { pathToFileURL } = require('url');
+const { DeviceManager, CACHE_DIR } = require('./src/device');
 const { convertToM4R, cleanupTemp, SUPPORTED_EXTENSIONS } = require('./src/converter');
+
+// Strip a user-supplied name down to a plain basename usable as a filename.
+function safeBaseName(name) {
+  return path.basename(String(name)).replace(/[/\\]/g, '').trim();
+}
 
 let mainWindow;
 let deviceManager;
@@ -32,16 +38,22 @@ function createWindow() {
 
 // Register custom protocol to serve cached audio files
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'mytunes-audio', privileges: { stream: true, supportFetchAPI: true } }
+  { scheme: 'tonedrop-audio', privileges: { stream: true, supportFetchAPI: true } }
 ]);
 
 app.whenReady().then(() => {
   deviceManager = new DeviceManager();
 
-  // Handle mytunes-audio:// URLs - serves cached files for playback
-  protocol.handle('mytunes-audio', (request) => {
-    const filePath = decodeURIComponent(request.url.replace('mytunes-audio://', ''));
-    return net.fetch(`file://${filePath}`);
+  // Handle tonedrop-audio:// URLs - serves cached files for playback.
+  // Confined to the ringtone cache dir so the renderer can't fetch arbitrary
+  // files off disk through this scheme.
+  const cacheRoot = path.resolve(CACHE_DIR);
+  protocol.handle('tonedrop-audio', (request) => {
+    const filePath = path.resolve(decodeURIComponent(request.url.slice('tonedrop-audio://'.length)));
+    if (filePath !== cacheRoot && !filePath.startsWith(cacheRoot + path.sep)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return net.fetch(pathToFileURL(filePath).toString());
   });
 
   createWindow();
@@ -51,12 +63,27 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', async () => {
+// Pulled ringtones and converted files live in temp dirs and must not outlive
+// the session. Both cleanup steps are synchronous, so they complete even during
+// teardown; `close()` is fire-and-forget since the socket dies with the process.
+let cleanedUp = false;
+function cleanupSession() {
+  if (cleanedUp) return;
+  cleanedUp = true;
   cleanupTemp();
   if (deviceManager) {
     deviceManager.clearCache();
-    await deviceManager.close();
+    deviceManager.close().catch(() => {});
   }
+}
+
+// `will-quit` covers every quit path (Cmd+Q, menu Quit, last window closed).
+// `window-all-closed` alone does NOT fire on an explicit quit on macOS, which
+// previously left the user's ringtones cached in temp after every session.
+app.on('will-quit', cleanupSession);
+
+app.on('window-all-closed', () => {
+  cleanupSession();
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -109,7 +136,7 @@ ipcMain.handle('load-ringtone-details', async (event, deviceId, udid, fileNames)
         details.push({
           file: item.file,
           localPath: item.localPath,
-          audioUrl: `mytunes-audio://${encodeURIComponent(item.localPath)}`,
+          audioUrl: `tonedrop-audio://${encodeURIComponent(item.localPath)}`,
           title: meta.title,
           artist: meta.artist,
           duration: meta.duration,
@@ -192,10 +219,10 @@ ipcMain.handle('rename-ringtone', async (_event, deviceId, udid, oldName, newNam
 ipcMain.handle('delete-ringtones', async (_event, deviceId, udid, fileNames) => {
   try {
     const results = await deviceManager.deleteMultipleRingtones(deviceId, udid, fileNames);
-    // Clear cache for deleted files
+    // Clear cache for deleted files (r.file is already a validated basename)
     for (const r of results) {
       if (r.success) {
-        const cached = path.join(require('os').tmpdir(), 'mytunes-cache', r.file);
+        const cached = path.join(CACHE_DIR, path.basename(r.file));
         try { fs.unlinkSync(cached); } catch {}
       }
     }
@@ -212,7 +239,8 @@ ipcMain.handle('transfer-ringtones', async (event, deviceId, udid, fileEntries) 
     for (let i = 0; i < fileEntries.length; i++) {
       const entry = fileEntries[i];
       const fp = entry.path;
-      const customName = entry.customName;
+      // Sanitize: customName becomes part of the output filename.
+      const customName = entry.customName ? safeBaseName(entry.customName) : null;
       const fileName = path.basename(fp);
       const ext = path.extname(fp).toLowerCase();
 

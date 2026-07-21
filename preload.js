@@ -1,6 +1,9 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-contextBridge.exposeInMainWorld('mytunes', {
+contextBridge.exposeInMainWorld('tonedrop', {
+  // File.path was removed from dropped File objects in Electron 32; webUtils
+  // is the supported way to resolve a dropped file to an absolute path.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   getDevices: () => ipcRenderer.invoke('get-devices'),
   listRingtones: (deviceId, udid) => ipcRenderer.invoke('list-ringtones', deviceId, udid),
   loadRingtoneDetails: (deviceId, udid, fileNames) => ipcRenderer.invoke('load-ringtone-details', deviceId, udid, fileNames),

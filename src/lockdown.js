@@ -98,8 +98,8 @@ async function getPairingRecord(udid) {
   const resp = await sendUsbmuxMessage({
     MessageType: 'ReadPairRecord',
     PairRecordID: udid,
-    ClientVersionString: 'mytunes',
-    ProgName: 'mytunes'
+    ClientVersionString: 'tonedrop',
+    ProgName: 'tonedrop'
   });
 
   if (!resp.PairRecordData) {
@@ -130,8 +130,8 @@ async function getPairingRecord(udid) {
 async function getSystemBUID() {
   const resp = await sendUsbmuxMessage({
     MessageType: 'ReadBUID',
-    ClientVersionString: 'mytunes',
-    ProgName: 'mytunes'
+    ClientVersionString: 'tonedrop',
+    ProgName: 'tonedrop'
   });
 
   if (!resp.BUID) {
@@ -145,7 +145,7 @@ async function startLockdownSession(usbmuxClient, deviceId, udid) {
   const tunnel = await usbmuxClient.createDeviceTunnel(deviceId, LOCKDOWN_PORT);
 
   // Query type
-  writeLockdownMessage(tunnel, { Label: 'mytunes', Request: 'QueryType' });
+  writeLockdownMessage(tunnel, { Label: 'tonedrop', Request: 'QueryType' });
   const typeResp = await readLockdownMessage(tunnel);
   if (typeResp.Type !== 'com.apple.mobile.lockdown') {
     tunnel.end();
@@ -158,7 +158,7 @@ async function startLockdownSession(usbmuxClient, deviceId, udid) {
 
   // Start session
   writeLockdownMessage(tunnel, {
-    Label: 'mytunes',
+    Label: 'tonedrop',
     Request: 'StartSession',
     HostID: pairingRecord.HostID,
     SystemBUID: systemBUID
@@ -202,7 +202,7 @@ async function startLockdownSession(usbmuxClient, deviceId, udid) {
 
 async function startService(session, serviceName) {
   writeLockdownMessage(session.stream, {
-    Label: 'mytunes',
+    Label: 'tonedrop',
     Request: 'StartService',
     Service: serviceName
   });

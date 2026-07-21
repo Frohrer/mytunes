@@ -65,8 +65,15 @@ function findAtom(buf, name, start, end) {
   return null;
 }
 
-// Update stco (32-bit) and co64 (64-bit) chunk offset atoms
-function updateChunkOffsets(moovBuf, delta) {
+// Update stco (32-bit) and co64 (64-bit) chunk offset atoms.
+//
+// Growing moov by `delta` shifts every byte at/after the original moov start
+// by `delta`; bytes before it are untouched. Chunk offsets point into mdat,
+// which may sit either before moov (offset < boundary — leave unchanged) or
+// after it (offset >= boundary — add delta). `boundary` is moov's original
+// absolute file offset. Shifting *all* offsets corrupts files whose mdat
+// precedes moov (moov-at-end, very common for .m4r).
+function updateChunkOffsets(moovBuf, delta, boundary) {
   let pos = 0;
   while (pos < moovBuf.length - 8) {
     const size = moovBuf.readUInt32BE(pos);
@@ -79,20 +86,20 @@ function updateChunkOffsets(moovBuf, delta) {
       for (let i = 0; i < entryCount; i++) {
         const off = pos + 16 + i * 4;
         const oldVal = moovBuf.readUInt32BE(off);
-        moovBuf.writeUInt32BE(oldVal + delta, off);
+        if (oldVal >= boundary) moovBuf.writeUInt32BE(oldVal + delta, off);
       }
     } else if (name === 'co64') {
       const entryCount = moovBuf.readUInt32BE(pos + 12);
       for (let i = 0; i < entryCount; i++) {
         const off = pos + 16 + i * 8;
         const oldVal = Number(moovBuf.readBigUInt64BE(off));
-        moovBuf.writeBigUInt64BE(BigInt(oldVal + delta), off);
+        if (oldVal >= boundary) moovBuf.writeBigUInt64BE(BigInt(oldVal + delta), off);
       }
     }
 
     // Recurse into container atoms
     if (['moov', 'trak', 'mdia', 'minf', 'stbl'].includes(name)) {
-      updateChunkOffsets(moovBuf.subarray(pos + 8, pos + size), delta);
+      updateChunkOffsets(moovBuf.subarray(pos + 8, pos + size), delta, boundary);
     }
 
     pos += size;
@@ -120,7 +127,7 @@ function addRingtoneMetadata(filePath, title) {
 
   // Build new metadata atoms
   const namAtom = buildTextAtom('\xA9nam', title || 'Ringtone');
-  const tooAtom = buildTextAtom('\xA9too', 'MyTunes 1.0');
+  const tooAtom = buildTextAtom('\xA9too', 'Tonedrop 1.0');
   const cpilAtom = buildBoolAtom('cpil', false);
   const pgapAtom = buildBoolAtom('pgap', false);
   const tmpoAtom = buildUInt16Atom('tmpo', 0);
@@ -194,9 +201,10 @@ function addRingtoneMetadata(filePath, title) {
   const sizeDelta = newMoovSize - oldMoovSize;
 
   if (sizeDelta !== 0) {
-    // Update stco/co64 offsets inside the new moov to account for the shift
-    // The moov content starts at offset 8 in newMoov (after the 8-byte header)
-    updateChunkOffsets(newMoov.subarray(8), sizeDelta);
+    // Update stco/co64 offsets inside the new moov to account for the shift.
+    // The moov content starts at offset 8 in newMoov (after the 8-byte header).
+    // Only offsets pointing at/after moov's original position move.
+    updateChunkOffsets(newMoov.subarray(8), sizeDelta, moov.offset);
   }
 
   // Rebuild file

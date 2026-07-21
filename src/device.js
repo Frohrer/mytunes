@@ -4,22 +4,49 @@ const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
 const plist = require('plist');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { startLockdownSession, startService } = require('./lockdown');
-const { createAFCClient } = require('./afc');
+const { createAFCClient, AFC_STATUS } = require('./afc');
 
 const RINGTONES_PATH = '/iTunes_Control/Ringtones';
 const RINGTONES_PLIST = '/iTunes_Control/iTunes/Ringtones.plist';
-const CACHE_DIR = path.join(os.tmpdir(), 'mytunes-cache');
+const CACHE_DIR = path.join(os.tmpdir(), 'tonedrop-cache');
+
+// Ringtone names cross the IPC boundary and are used to build both local cache
+// paths and on-device AFC paths. Reject anything that isn't a plain basename so
+// a crafted name can't escape the ringtones directory (path traversal).
+function safeRingtoneName(name) {
+  const str = String(name);
+  // Reject empties, traversal, path separators (either platform), and NUL.
+  // Checked explicitly so behavior doesn't depend on the host's path rules.
+  if (!str || str === '.' || str === '..' || /[/\\\0]/.test(str) || str !== path.basename(str)) {
+    throw new Error(`Invalid ringtone name: ${name}`);
+  }
+  return str;
+}
+
+// Device queries travel to the phone and can hang indefinitely if it vanishes
+// mid-request (e.g. during a reboot). Without a bound, the app's device polling
+// would pile up sockets that never settle.
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
 
 function generateGUID() {
   return crypto.randomBytes(8).toString('hex').toUpperCase();
 }
 
 function generatePID() {
-  // Random 64-bit signed integer
-  const buf = crypto.randomBytes(8);
-  return buf.readBigInt64BE(0).toString();
+  // Random 53-bit value — the widest range a JS number represents exactly,
+  // and the plist writer serializes a Number. A full 64-bit value would be
+  // silently rounded (losing its low bits) on the way into the plist.
+  return Number(crypto.randomBytes(8).readBigUInt64BE(0) >> 11n);
 }
 
 class DeviceManager {
@@ -67,12 +94,17 @@ class DeviceManager {
   async _reloadToneLibrary() {}
 
   async listDevices() {
-    const devices = await this.client.getDevices();
+    // Talks to the local usbmuxd daemon — fast, but bounded so a wedged socket
+    // can't stall the poll loop forever.
+    const devices = await withTimeout(this.client.getDevices(), 5000, 'usbmux getDevices');
     const result = [];
 
     for (const [id, props] of Object.entries(devices)) {
       try {
-        const values = await this.client.queryAllDeviceValues(id);
+        // Goes over lockdown to the phone; times out into the basic-info
+        // fallback below if the device is rebooting or unresponsive.
+        const values = await withTimeout(
+          this.client.queryAllDeviceValues(id), 5000, 'lockdown queryAllDeviceValues');
         result.push({
           id,
           udid: props.SerialNumber,
@@ -123,24 +155,28 @@ class DeviceManager {
   }
 
   async _readRingtonesPlist(afc) {
-    const tmpPath = path.join(os.tmpdir(), 'mytunes-Ringtones.plist');
+    const tmpPath = path.join(os.tmpdir(), 'tonedrop-Ringtones.plist');
     try {
       await afc.pullFile(RINGTONES_PLIST, tmpPath);
-      // Could be binary plist, convert to XML
-      const xml = execSync(`plutil -convert xml1 -o - "${tmpPath}"`, { encoding: 'utf8' });
-      return plist.parse(xml);
-    } catch {
-      // No plist yet, create empty structure
-      return { Ringtones: {} };
+    } catch (e) {
+      // Only a genuinely missing plist means "no ringtones registered yet".
+      // Any other failure (transient AFC error, permission, etc.) must
+      // propagate — swallowing it here would return an empty structure that
+      // the caller then writes back, deregistering every ringtone on device.
+      if (e.afcStatus === AFC_STATUS.NO_SUCH_PATH) return { Ringtones: {} };
+      throw e;
     }
+    // Could be a binary plist — convert to XML for parsing.
+    const xml = execFileSync('plutil', ['-convert', 'xml1', '-o', '-', tmpPath], { encoding: 'utf8' });
+    return plist.parse(xml);
   }
 
   async _writeRingtonesPlist(afc, data) {
-    const tmpPath = path.join(os.tmpdir(), 'mytunes-Ringtones-out.plist');
+    const tmpPath = path.join(os.tmpdir(), 'tonedrop-Ringtones-out.plist');
     const xml = plist.build(data);
     fs.writeFileSync(tmpPath, xml);
     // Convert to binary plist (iOS prefers this)
-    execSync(`plutil -convert binary1 "${tmpPath}"`);
+    execFileSync('plutil', ['-convert', 'binary1', tmpPath]);
     await afc.pushFile(tmpPath, RINGTONES_PLIST);
   }
 
@@ -151,7 +187,7 @@ class DeviceManager {
     data.Ringtones[fileName] = {
       GUID: generateGUID(),
       Name: displayName,
-      PID: parseInt(generatePID(), 10),
+      PID: generatePID(),
       'Protected Content': false,
       'Total Time': durationMs || 0
     };
@@ -200,6 +236,7 @@ class DeviceManager {
   }
 
   async pullRingtone(deviceId, udid, fileName) {
+    fileName = safeRingtoneName(fileName);
     if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
     const localPath = path.join(CACHE_DIR, fileName);
@@ -222,7 +259,14 @@ class DeviceManager {
     const afc = await this.connectAFC(deviceId, udid);
     const results = [];
     try {
-      for (const fileName of fileNames) {
+      for (const rawName of fileNames) {
+        let fileName;
+        try {
+          fileName = safeRingtoneName(rawName);
+        } catch (e) {
+          results.push({ file: rawName, localPath: null, success: false, error: e.message });
+          continue;
+        }
         const localPath = path.join(CACHE_DIR, fileName);
         if (fs.existsSync(localPath)) {
           results.push({ file: fileName, localPath, success: true });
@@ -252,6 +296,8 @@ class DeviceManager {
   }
 
   async renameRingtone(deviceId, udid, oldName, newName) {
+    oldName = safeRingtoneName(oldName);
+    newName = safeRingtoneName(newName);
     const afc = await this.connectAFC(deviceId, udid);
     try {
       await afc.renamePath(`${RINGTONES_PATH}/${oldName}`, `${RINGTONES_PATH}/${newName}`);
@@ -277,6 +323,7 @@ class DeviceManager {
   }
 
   async deleteRingtone(deviceId, udid, fileName) {
+    fileName = safeRingtoneName(fileName);
     const afc = await this.connectAFC(deviceId, udid);
     try {
       await afc.removePath(`${RINGTONES_PATH}/${fileName}`);
@@ -291,7 +338,14 @@ class DeviceManager {
     const afc = await this.connectAFC(deviceId, udid);
     const results = [];
     try {
-      for (const fileName of fileNames) {
+      for (const rawName of fileNames) {
+        let fileName;
+        try {
+          fileName = safeRingtoneName(rawName);
+        } catch (e) {
+          results.push({ file: rawName, success: false, error: e.message });
+          continue;
+        }
         try {
           await afc.removePath(`${RINGTONES_PATH}/${fileName}`);
           results.push({ file: fileName, success: true });
@@ -335,7 +389,6 @@ class DeviceManager {
     } finally {
       this.disconnectAFC();
     }
-    await this._reloadToneLibrary(deviceId, udid);
   }
 
   async pushMultipleRingtones(deviceId, udid, filePaths, onFileProgress, metadataList) {
@@ -370,7 +423,7 @@ class DeviceManager {
           data.Ringtones[fileName] = {
             GUID: generateGUID(),
             Name: displayName,
-            PID: parseInt(generatePID(), 10),
+            PID: generatePID(),
             'Protected Content': false,
             'Total Time': durationMs
           };
@@ -409,4 +462,4 @@ class DeviceManager {
   }
 }
 
-module.exports = { DeviceManager };
+module.exports = { DeviceManager, CACHE_DIR, safeRingtoneName };

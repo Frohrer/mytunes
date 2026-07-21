@@ -40,14 +40,20 @@ const AFC_FOPEN = {
   RDAPPEND: 0x00000006
 };
 
-// AFC status codes
+// AFC status codes, as returned in the header's status field.
+// These are wire values — the device picks them, so they must match the
+// protocol exactly. Only the ones this client actually branches on are
+// named; the rest surface as their numeric code in the error message.
 const AFC_STATUS = {
   SUCCESS:           0,
   UNKNOWN_ERROR:     1,
-  OP_NOT_SUPPORTED:  2,
-  NO_SUCH_PATH:      4,
-  PERM_DENIED:       10,
-  OBJECT_EXISTS:     7
+  OP_HEADER_INVALID: 2,
+  READ_ERROR:        4,
+  INVALID_ARG:       7,
+  NO_SUCH_PATH:      8,   // device reports 8 for a missing file or directory
+  PERM_DENIED:      10,
+  OP_NOT_SUPPORTED: 15,
+  OBJECT_EXISTS:    16
 };
 
 class AFCClient {
@@ -151,10 +157,11 @@ class AFCClient {
 
     if (resp.operation === AFC_OP.STATUS) {
       const status = Number(resp.headerPayload.readBigUInt64LE(0));
-      if (status === AFC_STATUS.NO_SUCH_PATH) {
-        throw new Error(`Path not found: ${remotePath}`);
-      }
-      throw new Error(`AFC readDirectory failed with status ${status}`);
+      const err = new Error(status === AFC_STATUS.NO_SUCH_PATH
+        ? `Path not found: ${remotePath}`
+        : `AFC readDirectory failed with status ${status}`);
+      err.afcStatus = status;
+      throw err;
     }
 
     return resp.data.toString('utf8').split('\0').filter(s => s.length > 0 && s !== '.' && s !== '..');
@@ -256,7 +263,9 @@ class AFCClient {
 
     if (resp.operation === AFC_OP.STATUS) {
       const status = Number(resp.headerPayload.readBigUInt64LE(0));
-      throw new Error(`AFC getFileInfo failed with status ${status}`);
+      const err = new Error(`AFC getFileInfo failed for ${remotePath} with status ${status}`);
+      err.afcStatus = status;
+      throw err;
     }
 
     const parts = resp.data.toString('utf8').split('\0').filter(s => s.length > 0);
@@ -359,4 +368,4 @@ async function createAFCClient(usbmuxClient, deviceId, servicePort, enableSSL, p
   return new AFCClient(tunnel);
 }
 
-module.exports = { AFCClient, createAFCClient, AFC_FOPEN };
+module.exports = { AFCClient, createAFCClient, AFC_FOPEN, AFC_STATUS };

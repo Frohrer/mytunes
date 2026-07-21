@@ -80,7 +80,7 @@ async function refreshDevices() {
   statusDot.className = 'status-dot searching';
 
   try {
-    const result = await window.mytunes.getDevices();
+    const result = await window.tonedrop.getDevices();
     if (result.success && result.devices.length > 0) {
       const wasDisconnected = !currentDevice;
       currentDevice = result.devices[0];
@@ -114,7 +114,7 @@ async function refreshDevices() {
         document.getElementById('disconnectSubtext').textContent = 'Waiting for device after screen reload';
         deviceName.textContent = 'Reconnecting...';
         reconnectTimer = setTimeout(() => {
-          document.getElementById('disconnectSubtext').textContent = 'Make sure it\'s plugged in and unlocked, dummy';
+          document.getElementById('disconnectSubtext').textContent = 'Make sure it’s plugged in and unlocked';
         }, 10000);
         startFastPolling();
       } else {
@@ -138,7 +138,7 @@ async function refreshDevices() {
 async function updateDeviceTabCount() {
   if (!currentDevice) return;
   try {
-    const result = await window.mytunes.listRingtones(currentDevice.id, currentDevice.udid);
+    const result = await window.tonedrop.listRingtones(currentDevice.id, currentDevice.udid);
     if (result.success) {
       tabDevice.innerHTML = `On Device <span class="tab-count">${result.ringtones.length}</span>`;
     }
@@ -191,6 +191,23 @@ function clearFiles() {
   renderUploadList();
 }
 
+// Static, data-free SVG markup. Never interpolate user data into innerHTML —
+// build those parts with textContent / dataset instead (HTML-injection safe).
+const MUSIC_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+
+function musicIcon() {
+  const div = document.createElement('div');
+  div.className = 'file-icon';
+  div.innerHTML = MUSIC_SVG;
+  return div;
+}
+
+function playSvg(isPlaying) {
+  return isPlaying
+    ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
+    : '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>';
+}
+
 function renderUploadList() {
   fileList.innerHTML = '';
   for (let i = 0; i < queuedFiles.length; i++) {
@@ -211,28 +228,53 @@ function renderUploadList() {
       uploading: 'uploading', done: 'done', error: 'error'
     }[file.status] || 'queued';
 
-    const badge = file.needsConvert && file.status === 'queued'
-      ? `<span class="file-badge">${file.ext.slice(1).toUpperCase()}</span>` : '';
-
     const isEditable = !isTransferring && file.status === 'queued';
 
-    item.innerHTML = `
-      <div class="file-icon">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-        </svg>
-      </div>
-      <div class="file-info">
-        ${isEditable
-          ? `<input class="upload-name-input" data-index="${i}" value="${file.customName}" title="Edit ringtone name" />`
-          : `<div class="file-name" title="${file.path}">${file.customName}</div>`
-        }
-        <div class="file-meta">${file.name}</div>
-      </div>
-      ${badge}
-      <span class="file-status ${statusClass}">${statusLabel}</span>
-      ${!isTransferring ? `<button class="file-remove" data-index="${i}" title="Remove">&times;</button>` : ''}
-    `;
+    item.appendChild(musicIcon());
+
+    const info = document.createElement('div');
+    info.className = 'file-info';
+    if (isEditable) {
+      const input = document.createElement('input');
+      input.className = 'upload-name-input';
+      input.dataset.index = i;
+      input.value = file.customName;
+      input.title = 'Edit ringtone name';
+      info.appendChild(input);
+    } else {
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'file-name';
+      nameDiv.title = file.path;
+      nameDiv.textContent = file.customName;
+      info.appendChild(nameDiv);
+    }
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'file-meta';
+    metaDiv.textContent = file.name;
+    info.appendChild(metaDiv);
+    item.appendChild(info);
+
+    if (file.needsConvert && file.status === 'queued') {
+      const badge = document.createElement('span');
+      badge.className = 'file-badge';
+      badge.textContent = file.ext.slice(1).toUpperCase();
+      item.appendChild(badge);
+    }
+
+    const status = document.createElement('span');
+    status.className = `file-status ${statusClass}`;
+    status.textContent = statusLabel;
+    item.appendChild(status);
+
+    if (!isTransferring) {
+      const remove = document.createElement('button');
+      remove.className = 'file-remove';
+      remove.dataset.index = i;
+      remove.title = 'Remove';
+      remove.textContent = '×';
+      item.appendChild(remove);
+    }
+
     fileList.appendChild(item);
   }
 
@@ -254,7 +296,7 @@ async function startTransfer() {
 
   try {
     const files = queuedFiles.map(f => ({ path: f.path, customName: f.customName }));
-    const result = await window.mytunes.transferRingtones(
+    const result = await window.tonedrop.transferRingtones(
       currentDevice.id, currentDevice.udid, files
     );
     if (result.success) {
@@ -285,7 +327,7 @@ async function loadDeviceRingtones() {
   deviceFileList.innerHTML = '';
 
   try {
-    const result = await window.mytunes.listRingtones(currentDevice.id, currentDevice.udid);
+    const result = await window.tonedrop.listRingtones(currentDevice.id, currentDevice.udid);
     if (result.success) {
       deviceRingtones = result.ringtones.map(r => ({
         ...r, selected: false, title: null, artist: null, duration: null, audioUrl: null, loaded: false
@@ -313,7 +355,7 @@ async function loadRingtoneDetails() {
   const fileNames = deviceRingtones.map(r => r.name);
 
   try {
-    const result = await window.mytunes.loadRingtoneDetails(
+    const result = await window.tonedrop.loadRingtoneDetails(
       currentDevice.id, currentDevice.udid, fileNames
     );
     if (result.success) {
@@ -377,27 +419,42 @@ function renderDeviceList() {
     const metaStr = metaParts.join(' \u00B7 ');
     const isPlaying = nowPlayingFile === rt.name && !audioPlayer.paused;
 
-    item.innerHTML = `
-      <input type="checkbox" class="file-checkbox" data-index="${i}" ${rt.selected ? 'checked' : ''}>
-      ${rt.audioUrl
-        ? `<button class="file-play${isPlaying ? ' playing' : ''}" data-file="${rt.name}" data-url="${rt.audioUrl}" data-title="${displayName}" title="Play">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              ${isPlaying
-                ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'
-                : '<polygon points="5,3 19,12 5,21"/>'}
-            </svg>
-           </button>`
-        : `<div class="file-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-            </svg>
-           </div>`
-      }
-      <div class="file-info">
-        <div class="file-name" data-rename="${i}" title="Double-click to rename">${displayName}</div>
-        ${metaStr ? `<div class="file-meta">${metaStr}</div>` : ''}
-      </div>
-    `;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'file-checkbox';
+    checkbox.dataset.index = i;
+    checkbox.checked = rt.selected;
+    item.appendChild(checkbox);
+
+    if (rt.audioUrl) {
+      const play = document.createElement('button');
+      play.className = `file-play${isPlaying ? ' playing' : ''}`;
+      play.dataset.file = rt.name;
+      play.dataset.url = rt.audioUrl;
+      play.dataset.title = displayName;
+      play.title = 'Play';
+      play.innerHTML = playSvg(isPlaying);
+      item.appendChild(play);
+    } else {
+      item.appendChild(musicIcon());
+    }
+
+    const info = document.createElement('div');
+    info.className = 'file-info';
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'file-name';
+    nameDiv.dataset.rename = i;
+    nameDiv.title = 'Double-click to rename';
+    nameDiv.textContent = displayName;
+    info.appendChild(nameDiv);
+    if (metaStr) {
+      const meta = document.createElement('div');
+      meta.className = 'file-meta';
+      meta.textContent = metaStr;
+      info.appendChild(meta);
+    }
+    item.appendChild(info);
+
     deviceFileList.appendChild(item);
   }
 }
@@ -419,7 +476,7 @@ async function startRename(index) {
   input.select();
 
   const commit = async () => {
-    const newDisplayName = input.value.trim();
+    const newDisplayName = input.value.trim().replace(/[/\\]/g, '');
     if (!newDisplayName || newDisplayName === displayName) {
       renderDeviceList();
       return;
@@ -429,7 +486,7 @@ async function startRename(index) {
     if (newFileName === rt.name) { renderDeviceList(); return; }
 
     try {
-      const result = await window.mytunes.renameRingtone(
+      const result = await window.tonedrop.renameRingtone(
         currentDevice.id, currentDevice.udid, rt.name, newFileName
       );
       if (result.success) {
@@ -468,7 +525,7 @@ async function deleteSelected() {
   ringtoneCount.textContent = `Deleting ${toDelete.length} ringtone${toDelete.length !== 1 ? 's' : ''}...`;
 
   try {
-    const result = await window.mytunes.deleteRingtones(currentDevice.id, currentDevice.udid, toDelete);
+    const result = await window.tonedrop.deleteRingtones(currentDevice.id, currentDevice.udid, toDelete);
     if (result.success) {
       const failed = result.results.filter(r => !r.success);
       if (failed.length > 0) showError(`Failed to delete ${failed.length} file(s)`);
@@ -500,7 +557,7 @@ async function saveSelected() {
   }
 
   try {
-    const result = await window.mytunes.saveRingtones(files);
+    const result = await window.tonedrop.saveRingtones(files);
     if (result.success && result.saved > 0) {
       // Brief deselect to indicate success
       for (const r of deviceRingtones) r.selected = false;
@@ -595,7 +652,7 @@ function showError(message) {
   setTimeout(() => banner.remove(), 8000);
 }
 
-window.mytunes.onTransferProgress(({ index, fileName, status }) => {
+window.tonedrop.onTransferProgress(({ index, fileName, status }) => {
   if (queuedFiles[index]) {
     queuedFiles[index].status = status;
     renderUploadList();
@@ -608,11 +665,11 @@ dropzone.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropaga
 dropzone.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('drag-over'); });
 dropzone.addEventListener('drop', (e) => {
   e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('drag-over');
-  const paths = Array.from(e.dataTransfer.files).map(f => f.path).filter(p => p);
+  const paths = Array.from(e.dataTransfer.files).map(f => window.tonedrop.getPathForFile(f)).filter(p => p);
   if (paths.length > 0) addFiles(paths);
 });
 dropzone.addEventListener('click', async () => {
-  const result = await window.mytunes.openFileDialog();
+  const result = await window.tonedrop.openFileDialog();
   if (!result.canceled && result.files.length > 0) addFiles(result.files);
 });
 
@@ -687,7 +744,7 @@ restartBtn.addEventListener('click', async () => {
   restartBtn.textContent = 'Restarting...';
   restartBtn.disabled = true;
   try {
-    await window.mytunes.restartDevice(currentDevice.id, currentDevice.udid);
+    await window.tonedrop.restartDevice(currentDevice.id, currentDevice.udid);
     restartBar.classList.add('hidden');
     currentDevice = null;
     statusDot.className = 'status-dot';
