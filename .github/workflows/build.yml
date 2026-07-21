@@ -25,13 +25,6 @@ jobs:
   build-macos:
     needs: test
     runs-on: macos-latest
-    env:
-      # Exposed at job level so the step `if:` conditions can read them.
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,17 +35,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # When a Developer ID cert is configured, electron-builder signs the app
-      # automatically (CSC_LINK/CSC_KEY_PASSWORD) and notarizes it with the
-      # Apple credentials in env.
+      # Deliberately NOT exposed as job-level env. An absent secret expands to
+      # the empty string rather than being unset, and electron-builder treats a
+      # defined-but-empty CSC_LINK as a certificate *path* — it resolves to the
+      # workspace dir and fails with "<workspace> not a file". So the signing
+      # vars are set only on the step that actually signs.
+      - name: Detect signing credentials
+        id: signing
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No CSC_LINK secret — building unsigned." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Build macOS DMG (signed + notarized)
-        if: ${{ env.CSC_LINK != '' }}
+        if: steps.signing.outputs.available == 'true'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac --publish never --config.mac.notarize=true
 
-      # Fallback for forks / runs without signing secrets: unsigned build.
-      # Unsigned artifacts trigger Gatekeeper warnings and are NOT for release.
+      # Unsigned fallback. CSC_IDENTITY_AUTO_DISCOVERY=false stops
+      # electron-builder from scanning the runner keychain for an identity it
+      # will not find; without it the build warns and can still try to sign.
       - name: Build macOS DMG (unsigned)
-        if: ${{ env.CSC_LINK == '' }}
+        if: steps.signing.outputs.available != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npx electron-builder --mac --publish never
 
       - name: Upload macOS artifacts
